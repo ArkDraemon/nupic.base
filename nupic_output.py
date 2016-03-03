@@ -28,6 +28,8 @@ from collections import deque
 from abc import ABCMeta, abstractmethod
 # Try to import matplotlib, but we don't have to.
 import matplotlib
+from coverage.files import actual_path
+
 matplotlib.use('TKAgg')
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
@@ -87,12 +89,12 @@ class NuPICPlotOutput(NuPICOutput):
         super(NuPICPlotOutput, self).__init__(*args, **kwargs)
         # Turn matplotlib interactive mode on.
         plt.ion()
-        self.date = ""
-        self.convertedDate = ""
-        self.actualValue = ""
-        self.predictedValue = ""
-        self.actualLine = ""
-        self.predictedLine = ""
+        self.date = []
+        self.convertedDate = []
+        self.actualValue = []
+        self.predictedValue = []
+        self.actualLine = None
+        self.predictedLine = None
         self.linesInitialized = False
         self.graph = []
         fig = plt.figure(figsize=(14, 6))
@@ -101,12 +103,13 @@ class NuPICPlotOutput(NuPICOutput):
         plt.title(self.name)
         plt.ylabel(self.headers[0])
         plt.xlabel(self.headers[1])
+        plt.legend(('actual', 'predicted'), loc=3)
         plt.tight_layout()
 
     def initializeLines(self, timestamps):
         print "initializing %s" % self.name
         self.date = deque([timestamps] * WINDOW, maxlen=WINDOW)
-        self.convertedDates = deque([date2num(self.date)], maxlen=WINDOW)
+        self.convertedDate = deque([date2num(d) for d in self.date], maxlen=WINDOW)
         self.actualValue = deque([0.0] * WINDOW, maxlen=WINDOW)
         self.predictedValue = deque([0.0] * WINDOW, maxlen=WINDOW)
         self.actualLine, = self.graph.plot(self.date, self.actualValue)
@@ -122,21 +125,20 @@ class NuPICPlotOutput(NuPICOutput):
             self.initializeLines(timestamps)
 
         self.date.append(timestamps)
-        self.convertedDates.append(date2num(timestamps))
+        self.convertedDate.append(date2num(timestamps))
         self.actualValue.append(actual_values)
         self.predictedValue.append(predictedValues)
 
         # Update data
-        self.actualLine.set_xdata(self.convertedDates)
+        self.actualLine.set_xdata(self.convertedDate)
         self.actualLine.set_ydata(self.actualValue)
-        self.predictedLine.set_xdata(self.convertedDates)
+        self.predictedLine.set_xdata(self.convertedDate)
         self.predictedLine.set_ydata(self.predictedValue)
 
         self.graph.relim()
         self.graph.autoscale_view(True, True, True)
 
         plt.draw()
-        plt.legend(('actual', 'predicted'), loc=3)
         plt.pause(0.00000001)
 
     def close(self):

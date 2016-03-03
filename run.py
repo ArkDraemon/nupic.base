@@ -83,7 +83,13 @@ parser.add_option(
     dest="date_format",
     default=DEFAULT_DATE_FORMAT,
     help="Format used to read input's timestamp. Default is "+DEFAULT_DATE_FORMAT+".")
-
+parser.add_option(
+    "-v",
+    "--verbose",
+    dest="verbose",
+    action="store_true",
+    default=True,
+    help="Print infos")
 
 def createModel(modelParams):
   model = ModelFactory.create(modelParams)
@@ -142,7 +148,7 @@ def runIoThroughNupic(inputData, model, name, plot):
     result = model.run(data)
     result.metrics = metricsManager.update(result)
 
-    if counter % 100 == 0:
+    if options.verbose is not None and counter % 100 == 0:
       print "Read %i lines..." % counter
       print ("After %i records, 1-step altMAPE=%f" % (counter,
               result.metrics["multiStepBestPredictions:multiStep:"
@@ -156,7 +162,7 @@ def runIoThroughNupic(inputData, model, name, plot):
     vals = []
     for field in plot:
         vals.append(data[field])
-    output.write(vals, [prediction])
+    output.write(vals, prediction)
 
   inputFile.close()
   output.close()
