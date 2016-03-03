@@ -36,13 +36,13 @@ DEFAULT_WORKERS = 4
 verbose = False
 
 parser = OptionParser(
-  usage="%prog <path/to/input> [options]\n\nSwarm over NuPIC WAV input file."
+  usage="%prog [options]\n\nSwarm over input file, using swarm_description as parameters."
 )
 parser.add_option(
     "-i",
     "--iteration_count",
     dest="iteration_count",
-    default=DEFAULT_SWARM_ITERATION_COUNT,
+    default=SWARM_DESCRIPTION["iterationCount"],
     help="How many rows of input data to swarm over.")
 parser.add_option(
     "-w",
@@ -65,7 +65,7 @@ parser.add_option(
     "-s",
     "--swarm_size",
     dest="swarm_size",
-    default=DEFAULT_SWARM_SIZE,
+    default=SWARM_DESCRIPTION["swarmSize"],
     help="How big should the swarm be? \"small\", \"medium\", or \"large\".")
 parser.add_option(
     "-v",
@@ -92,8 +92,7 @@ def printSwarmSizeWarning(size):
 
 
 
-def get_swarm_description(predicted_field,
-        iteration_count, swarm_size, inference_type):
+def get_swarm_description(predicted_field, iteration_count, swarm_size, inference_type):
   SWARM_DESCRIPTION["iterationCount"] = iteration_count
   SWARM_DESCRIPTION["swarmSize"] = swarm_size
   if inference_type is not None:
@@ -168,7 +167,7 @@ def run(input_path, iteration_count, swarm_size,
 
 
 if __name__ == "__main__":
-  (options, args) = parser.parse_args(sys.argv[0:])
+  (options, args) = parser.parse_args(sys.argv[1:])
 
   try:
     input_path = SWARM_DESCRIPTION["streamDef"]["streams"][0]["source"]

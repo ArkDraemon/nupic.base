@@ -27,66 +27,92 @@ import importlib
 import sys
 import csv
 import datetime
-
+from optparse import OptionParser
 from nupic.data.inference_shifter import InferenceShifter
 from nupic.frameworks.opf.metrics import MetricSpec
 from nupic.frameworks.opf.modelfactory import ModelFactory
 from nupic.frameworks.opf.predictionmetricsmanager import MetricsManager
-
+from swarm_description import SWARM_DESCRIPTION
 import nupic_output
 
 
 DESCRIPTION = (
   "Starts a NuPIC model from the model params returned by the swarm\n"
-  "and pushes each line of input from the gym into the model. Results\n"
+  "and pushes each line of input  into the model. Results\n"
   "are written to an output file (default) or plotted dynamically if\n"
   "the --plot option is specified.\n"
   "NOTE: You must run ./swarm.py before this, because model parameters\n"
   "are required to run NuPIC.\n"
 )
-GYM_NAME = "perhour_conso"  # or use "rec-center-every-15m-large"
 DATA_DIR = "."
+PREDICTED_FIELD = SWARM_DESCRIPTION["inferenceArgs"]["predictedField"]
+NAME = SWARM_DESCRIPTION["streamDef"]["info"]
 MODEL_PARAMS_DIR = "./model_params"
 # '7/2/10 0:00'
-DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+DEFAULT_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 _METRIC_SPECS = (
-    MetricSpec(field='VALUE', metric='multiStep',
+    MetricSpec(field=PREDICTED_FIELD, metric='multiStep',
                inferenceElement='multiStepBestPredictions',
                params={'errorMetric': 'aae', 'window': 1000, 'steps': 1}),
-    MetricSpec(field='VALUE', metric='trivial',
+    MetricSpec(field=PREDICTED_FIELD, metric='trivial',
                inferenceElement='prediction',
                params={'errorMetric': 'aae', 'window': 1000, 'steps': 1}),
-    MetricSpec(field='VALUE', metric='multiStep',
+    MetricSpec(field=PREDICTED_FIELD, metric='multiStep',
                inferenceElement='multiStepBestPredictions',
                params={'errorMetric': 'altMAPE', 'window': 1000, 'steps': 1}),
-    MetricSpec(field='VALUE', metric='trivial',
+    MetricSpec(field=PREDICTED_FIELD, metric='trivial',
                inferenceElement='prediction',
                params={'errorMetric': 'altMAPE', 'window': 1000, 'steps': 1}),
 )
 
+parser = OptionParser(
+  usage="%prog [options]\n\nSwarm over input file, using swarm_description as parameters."
+)
+parser.add_option(
+    "-p",
+    "--plot",
+    dest="plot",
+    nargs=2,
+    default=[],
+    help="X and Y axis data to plot dynamically with the prediction during the run.\n"
+    "Results will not be saved as a csv file.")
+parser.add_option(
+    "-d",
+    "--date_format",
+    dest="date_format",
+    default=DEFAULT_DATE_FORMAT,
+    help="Format used to read input's timestamp. Default is "+DEFAULT_DATE_FORMAT+".")
+
+
 def createModel(modelParams):
   model = ModelFactory.create(modelParams)
-  model.enableInference({"predictedField": "VALUE"})
+  model.enableInference({"predictedField": PREDICTED_FIELD})
   return model
 
 
-
-def getModelParamsFromName(gymName):
+def getModelParamsFromName(name):
   importName = "model_params.%s_model_params" % (
-    gymName.replace(" ", "_").replace("-", "_")
+    name.replace(" ", "_").replace("-", "_")
   )
   print "Importing model params from %s" % importName
   try:
     importedModelParams = importlib.import_module(importName).MODEL_PARAMS
-  except ImportError:
+  except ImportError as error:
+    print error
     raise Exception("No model params exist for '%s'. Run swarm first!"
-                    % gymName)
+                    % name)
   return importedModelParams
 
 
+def translate_data(type, value):
+    if type == "datetime":
+        return datetime.datetime.strptime(value, options.date_format)
+    if type == "float":
+        return float(value)
 
-def runIoThroughNupic(inputData, model, gymName, plot):
+
+def runIoThroughNupic(inputData, model, name, plot):
   inputFile = open(inputData, "rb")
   csvReader = csv.reader(inputFile)
   # skip header rows
@@ -95,10 +121,12 @@ def runIoThroughNupic(inputData, model, gymName, plot):
   csvReader.next()
 
   shifter = InferenceShifter()
-  if plot:
-    output = nupic_output.NuPICPlotOutput([gymName])
+  if len(plot) == 0:
+      for field in SWARM_DESCRIPTION["includedFields"]:
+          plot.append(field["fieldName"])
+      output = nupic_output.NuPICFileOutput(name, plot)
   else:
-    output = nupic_output.NuPICFileOutput([gymName])
+      output = nupic_output.NuPICPlotOutput(name, plot)
 
   metricsManager = MetricsManager(_METRIC_SPECS, model.getFieldInfo(),
                                   model.getInferenceType())
@@ -106,12 +134,12 @@ def runIoThroughNupic(inputData, model, gymName, plot):
   counter = 0
   for row in csvReader:
     counter += 1
-    timestamp = datetime.datetime.strptime(row[0], DATE_FORMAT)
-    consumption = float(row[1])
-    result = model.run({
-      "ABSOLUTEDATE": timestamp,
-      "VALUE": consumption
-    })
+    data = {}
+    fldCounter = 0
+    for field in SWARM_DESCRIPTION["includedFields"]:
+        data[field["fieldName"]] = translate_data(field["fieldType"], row[fldCounter])
+        fldCounter += 1
+    result = model.run(data)
     result.metrics = metricsManager.update(result)
 
     if counter % 100 == 0:
@@ -119,31 +147,25 @@ def runIoThroughNupic(inputData, model, gymName, plot):
       print ("After %i records, 1-step altMAPE=%f" % (counter,
               result.metrics["multiStepBestPredictions:multiStep:"
                              "errorMetric='altMAPE':steps=1:window=1000:"
-                             "field=VALUE"]))
+                             "field="+PREDICTED_FIELD]))
 
     if plot:
       result = shifter.shift(result)
 
     prediction = result.inferences["multiStepBestPredictions"][1]
-    output.write([timestamp], [consumption], [prediction])
+    vals = []
+    for field in plot:
+        vals.append(data[field])
+    output.write(vals, [prediction])
 
   inputFile.close()
   output.close()
 
 
-
-def runModel(gymName, plot=False):
-  print "Creating model from %s..." % gymName
-  model = createModel(getModelParamsFromName(gymName))
-  inputData = "%s/%s.csv" % (DATA_DIR, gymName.replace(" ", "_"))
-  runIoThroughNupic(inputData, model, gymName, plot)
-
-
-
 if __name__ == "__main__":
   print DESCRIPTION
-  plot = True
-  args = sys.argv[1:]
-  if "--plot" in args:
-    plot = True
-  runModel(GYM_NAME, plot=plot)
+  (options, args) = parser.parse_args(sys.argv[1:])
+  print "Creating model from %s..." % NAME
+  model = createModel(getModelParamsFromName(NAME))
+  inputData = SWARM_DESCRIPTION["streamDef"]["streams"][0]["source"]
+  runIoThroughNupic(inputData, model, NAME, options.plot)

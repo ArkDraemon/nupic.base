@@ -22,23 +22,23 @@
 SWARM_DESCRIPTION = {
   "includedFields": [
     {
-      "fieldName": "ABSOLUTEDATE",
+      "fieldName": "time",
       "fieldType": "datetime"
     },
     {
-      "fieldName": "VALUE",
+      "fieldName": "energy",
       "fieldType": "float",
-      "maxValue": 3000.0,
+      "maxValue": 53.0,
       "minValue": 0.0
     }
   ],
   "streamDef": {
-    "info": "VALUE",
+    "info": "test",
     "version": 1,
     "streams": [
       {
-        "info": "Per Hour",
-        "source": "file://perhour_conso.csv",
+        "info": "test",
+        "source": "test.csv",
         "columns": [
           "*"
         ],
@@ -52,7 +52,7 @@ SWARM_DESCRIPTION = {
     "predictionSteps": [
       1
     ],
-    "predictedField": "VALUE"
+    "predictedField": "energy"
   },
   "iterationCount": 1,
   "swarmSize": "small"

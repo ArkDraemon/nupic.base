@@ -27,14 +27,11 @@ import csv
 from collections import deque
 from abc import ABCMeta, abstractmethod
 # Try to import matplotlib, but we don't have to.
-try:
-  import matplotlib
-  matplotlib.use('TKAgg')
-  import matplotlib.pyplot as plt
-  import matplotlib.gridspec as gridspec
-  from matplotlib.dates import date2num
-except ImportError:
-  pass
+import matplotlib
+matplotlib.use('TKAgg')
+import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
+from matplotlib.dates import date2num
 
 WINDOW = 100
 
@@ -44,13 +41,14 @@ class NuPICOutput(object):
   __metaclass__ = ABCMeta
 
 
-  def __init__(self, names, showAnomalyScore=False):
-    self.names = names
+  def __init__(self, name, headers, showAnomalyScore=False):
+    self.name = name
+    self.headers = headers
     self.showAnomalyScore = showAnomalyScore
 
 
   @abstractmethod
-  def write(self, timestamps, actualValues, predictedValues,
+  def write(self, columns, predictedValue,
             predictionStep=1):
     pass
 
@@ -60,139 +58,90 @@ class NuPICOutput(object):
     pass
 
 
-
 class NuPICFileOutput(NuPICOutput):
 
+    def __init__(self, *args, **kwargs):
+        super(NuPICFileOutput, self).__init__(*args, **kwargs)
+        self.outputFile = ""
+        self.outputWriter = ""
+        self.lineCount = 0
+        outputFileName = "%s_out.csv" % self.name
+        print "Preparing to output %s data to %s" % (self.name, outputFileName)
+        self.outputFile = open(outputFileName, "w")
+        self.outputWriter = csv.writer(self.outputFile)
+        self.outputWriter.writerow(self.headers)
 
-  def __init__(self, *args, **kwargs):
-    super(NuPICFileOutput, self).__init__(*args, **kwargs)
-    self.outputFiles = []
-    self.outputWriters = []
-    self.lineCounts = []
-    headerRow = ['timestamp', 'kw_energy_consumption', 'prediction']
-    for name in self.names:
-      self.lineCounts.append(0)
-      outputFileName = "%s_out.csv" % name
-      print "Preparing to output %s data to %s" % (name, outputFileName)
-      outputFile = open(outputFileName, "w")
-      self.outputFiles.append(outputFile)
-      outputWriter = csv.writer(outputFile)
-      self.outputWriters.append(outputWriter)
-      outputWriter.writerow(headerRow)
-
-
-
-  def write(self, timestamps, actualValues, predictedValues,
+    def write(self, columns, predictedValue,
             predictionStep=1):
+        self.outputWriter.writerow(columns + [predictedValue])
+        self.lineCount += 1
 
-    assert len(timestamps) == len(actualValues) == len(predictedValues)
-
-    for index in range(len(self.names)):
-      timestamp = timestamps[index]
-      actual = actualValues[index]
-      prediction = predictedValues[index]
-      writer = self.outputWriters[index]
-
-      if timestamp is not None:
-        outputRow = [timestamp, actual, prediction]
-        writer.writerow(outputRow)
-        self.lineCounts[index] += 1
-
-
-
-  def close(self):
-    for index, name in enumerate(self.names):
-      self.outputFiles[index].close()
-      print "Done. Wrote %i data lines to %s." % (self.lineCounts[index], name)
-
+    def close(self):
+        self.outputFile.close()
+        print "Done. Wrote %i data lines to %s." % (self.lineCount, self.name)
 
 
 class NuPICPlotOutput(NuPICOutput):
 
+    def __init__(self, *args, **kwargs):
+        super(NuPICPlotOutput, self).__init__(*args, **kwargs)
+        # Turn matplotlib interactive mode on.
+        plt.ion()
+        self.date = ""
+        self.convertedDate = ""
+        self.actualValue = ""
+        self.predictedValue = ""
+        self.actualLine = ""
+        self.predictedLine = ""
+        self.linesInitialized = False
+        self.graph = []
+        fig = plt.figure(figsize=(14, 6))
+        gs = gridspec.GridSpec(1, 1)
+        self.graph = fig.add_subplot(gs[0, 0])
+        plt.title(self.name)
+        plt.ylabel(self.headers[0])
+        plt.xlabel(self.headers[1])
+        plt.tight_layout()
 
-  def __init__(self, *args, **kwargs):
-    super(NuPICPlotOutput, self).__init__(*args, **kwargs)
-    # Turn matplotlib interactive mode on.
-    plt.ion()
-    self.dates = []
-    self.convertedDates = []
-    self.actualValues = []
-    self.predictedValues = []
-    self.actualLines = []
-    self.predictedLines = []
-    self.linesInitialized = False
-    self.graphs = []
-    plotCount = len(self.names)
-    plotHeight = max(plotCount * 3, 6)
-    fig = plt.figure(figsize=(14, plotHeight))
-    gs = gridspec.GridSpec(plotCount, 1)
-    for index in range(len(self.names)):
-      self.graphs.append(fig.add_subplot(gs[index, 0]))
-      plt.title(self.names[index])
-      plt.ylabel('KW Energy Consumption')
-      plt.xlabel('Date')
-    plt.tight_layout()
+    def initializeLines(self, timestamps):
+        print "initializing %s" % self.name
+        self.date = deque([timestamps] * WINDOW, maxlen=WINDOW)
+        self.convertedDates = deque([date2num(self.date)], maxlen=WINDOW)
+        self.actualValue = deque([0.0] * WINDOW, maxlen=WINDOW)
+        self.predictedValue = deque([0.0] * WINDOW, maxlen=WINDOW)
+        self.actualLine, = self.graph.plot(self.date, self.actualValue)
+        self.predictedLine, = self.graph.plot(self.date, self.predictedValue)
+        self.linesInitialized = True
 
+    def write(self, columns, predictedValues, predictionStep=1):
+        timestamps = columns[0]
+        actual_values = columns[1]
+        # We need the first timestamp to initialize the lines at the right X value,
+        # so do that check first.
+        if not self.linesInitialized:
+            self.initializeLines(timestamps)
 
+        self.date.append(timestamps)
+        self.convertedDates.append(date2num(timestamps))
+        self.actualValue.append(actual_values)
+        self.predictedValue.append(predictedValues)
 
-  def initializeLines(self, timestamps):
-    for index in range(len(self.names)):
-      print "initializing %s" % self.names[index]
-      # graph = self.graphs[index]
-      self.dates.append(deque([timestamps[index]] * WINDOW, maxlen=WINDOW))
-      self.convertedDates.append(deque(
-        [date2num(date) for date in self.dates[index]], maxlen=WINDOW
-      ))
-      self.actualValues.append(deque([0.0] * WINDOW, maxlen=WINDOW))
-      self.predictedValues.append(deque([0.0] * WINDOW, maxlen=WINDOW))
+        # Update data
+        self.actualLine.set_xdata(self.convertedDates)
+        self.actualLine.set_ydata(self.actualValue)
+        self.predictedLine.set_xdata(self.convertedDates)
+        self.predictedLine.set_ydata(self.predictedValue)
 
-      actualPlot, = self.graphs[index].plot(
-        self.dates[index], self.actualValues[index]
-      )
-      self.actualLines.append(actualPlot)
-      predictedPlot, = self.graphs[index].plot(
-        self.dates[index], self.predictedValues[index]
-      )
-      self.predictedLines.append(predictedPlot)
-    self.linesInitialized = True
+        self.graph.relim()
+        self.graph.autoscale_view(True, True, True)
 
+        plt.draw()
+        plt.legend(('actual', 'predicted'), loc=3)
+        plt.pause(0.00000001)
 
-
-  def write(self, timestamps, actualValues, predictedValues,
-            predictionStep=1):
-
-    assert len(timestamps) == len(actualValues) == len(predictedValues)
-
-    # We need the first timestamp to initialize the lines at the right X value,
-    # so do that check first.
-    if not self.linesInitialized:
-      self.initializeLines(timestamps)
-
-    for index in range(len(self.names)):
-      self.dates[index].append(timestamps[index])
-      self.convertedDates[index].append(date2num(timestamps[index]))
-      self.actualValues[index].append(actualValues[index])
-      self.predictedValues[index].append(predictedValues[index])
-
-      # Update data
-      self.actualLines[index].set_xdata(self.convertedDates[index])
-      self.actualLines[index].set_ydata(self.actualValues[index])
-      self.predictedLines[index].set_xdata(self.convertedDates[index])
-      self.predictedLines[index].set_ydata(self.predictedValues[index])
-
-      self.graphs[index].relim()
-      self.graphs[index].autoscale_view(True, True, True)
-
-    plt.draw()
-    plt.legend(('actual','predicted'), loc=3)
-    plt.pause(0.00000001)
-
-
-
-  def close(self):
-    plt.ioff()
-    plt.show()
-
+    def close(self):
+        plt.ioff()
+        plt.show()
 
 
 NuPICOutput.register(NuPICFileOutput)
