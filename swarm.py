@@ -47,6 +47,7 @@ parser.add_option(
 parser.add_option(
     "-w",
     "--max_workers",
+    type="int",
     dest="max_workers",
     default=DEFAULT_WORKERS,
     help="How many CPU processes to use.")
