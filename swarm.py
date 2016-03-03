@@ -112,10 +112,10 @@ def model_params_to_string(modelParams):
 def write_model_params_to_file(modelParams, name):
   clean_name = name.replace(" ", "_").replace("-", "_")
   params_name = "%s_model_params.py" % clean_name
-  out_dir = os.path.join(os.getcwd(), 'model_params')
+  out_dir = 'model_params'#os.path.join(os.getcwd(), 'model_params')
   if not os.path.isdir(out_dir):
     os.mkdir(out_dir)
-  out_path = os.path.join(os.getcwd(), 'model_params', params_name)
+  out_path = os.path.join('model_params', params_name)
   with open(out_path, "wb") as outFile:
     model_params_string = model_params_to_string(modelParams)
     outFile.write("MODEL_PARAMS = \\\n%s" % model_params_string)
