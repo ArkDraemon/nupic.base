@@ -49,7 +49,7 @@ PREDICTED_FIELD = SWARM_DESCRIPTION["inferenceArgs"]["predictedField"]
 NAME = SWARM_DESCRIPTION["streamDef"]["info"]
 MODEL_PARAMS_DIR = "./model_params"
 # '7/2/10 0:00'
-DEFAULT_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+DEFAULT_DATE_FORMAT = "%m/%d/%y %H:%M"
 
 _METRIC_SPECS = (
     MetricSpec(field=PREDICTED_FIELD, metric='multiStep',
